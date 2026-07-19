@@ -12,7 +12,15 @@ const tasks = [
 ];
 
 app.get('/', (req, res) => {
-  res.status(200).send('Welcome to the Task REST API server base.');
+  res.status(200).json({
+    name: 'Task API',
+    version: '1.0',
+    endpoints: ['/tasks']
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 app.listen(PORT, () => {
