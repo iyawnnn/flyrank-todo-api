@@ -45,7 +45,6 @@ app.post('/tasks', (req, res) => {
     return res.status(400).json({ error: 'Title parameter is required and cannot be empty' });
   }
 
-  // Dynamically calculate the next sequential numeric identifier
   const nextId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
 
   const newTask = {
@@ -57,6 +56,48 @@ app.post('/tasks', (req, res) => {
   tasks.push(newTask);
 
   res.status(201).json(newTask);
+});
+
+app.put('/tasks/:id', (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  const taskIndex = tasks.findIndex(t => t.id === taskId);
+
+  if (taskIndex === -1) {
+    return res.status(404).json({ error: `Task ${taskId} not found` });
+  }
+
+  const { title, done } = req.body;
+
+  if (title !== undefined && (typeof title !== 'string' || title.trim() === '')) {
+    return res.status(400).json({ error: 'Title must be a non-empty string' });
+  }
+
+  if (done !== undefined && typeof done !== 'boolean') {
+    return res.status(400).json({ error: 'Done must be a boolean value' });
+  }
+
+  if (title !== undefined) {
+    tasks[taskIndex].title = title.trim();
+  }
+  if (done !== undefined) {
+    tasks[taskIndex].done = done;
+  }
+
+  res.status(200).json(tasks[taskIndex]);
+});
+
+app.delete('/tasks/:id', (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  const taskIndex = tasks.findIndex(t => t.id === taskId);
+
+  if (taskIndex === -1) {
+    return res.status(404).json({ error: `Task ${taskId} not found` });
+  }
+
+  // Remove the exact array element to avoid empty slots in memory
+  tasks.splice(taskIndex, 1);
+
+  res.status(204).send();
 });
 
 app.listen(PORT, () => {
