@@ -1,15 +1,25 @@
 import express from 'express';
+import fs from 'fs';
+import swaggerUi from 'swagger-ui-express';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// Safely parse the manual OpenAPI documentation file schema mapping
+const openapiSpecification = JSON.parse(
+  fs.readFileSync(new URL('./openapi.json', import.meta.url), 'utf8')
+);
+
 const tasks = [
   { id: 1, title: 'Setup project repository', done: true },
   { id: 2, title: 'Design REST API routing', done: false },
   { id: 3, title: 'Integrate Swagger documentation', done: false }
 ];
+
+// Expose the interactive visual dashboard context route transparently
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpecification));
 
 app.get('/', (req, res) => {
   res.status(200).json({
@@ -94,7 +104,6 @@ app.delete('/tasks/:id', (req, res) => {
     return res.status(404).json({ error: `Task ${taskId} not found` });
   }
 
-  // Remove the exact array element to avoid empty slots in memory
   tasks.splice(taskIndex, 1);
 
   res.status(204).send();
