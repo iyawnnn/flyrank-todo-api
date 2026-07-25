@@ -1,25 +1,40 @@
-import { DatabaseSync } from 'node:sqlite';
-import path from 'path';
+import pg from 'pg';
+import dotenv from 'dotenv';
 
-const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'tasks.db');
-const db = new DatabaseSync(dbPath);
+dotenv.config();
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    done INTEGER NOT NULL DEFAULT 0
-  )
-`);
+const { Pool } = pg;
 
-const countStmt = db.prepare('SELECT COUNT(*) AS count FROM tasks');
-const countRow = countStmt.get();
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL
+});
 
-if (countRow.count === 0) {
-  const insertStmt = db.prepare('INSERT INTO tasks (title, done) VALUES (?, ?)');
-  insertStmt.run('Setup project repository', 1);
-  insertStmt.run('Design REST API routing', 0);
-  insertStmt.run('Integrate Swagger documentation', 0);
+export async function initDb() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        done BOOLEAN NOT NULL DEFAULT FALSE
+      )
+    `);
+
+    const countResult = await client.query('SELECT COUNT(*) AS count FROM tasks');
+    const count = parseInt(countResult.rows[0].count, 10);
+
+    if (count === 0) {
+      await client.query(`
+        INSERT INTO tasks (title, done) 
+        VALUES 
+          ('Setup project repository', TRUE),
+          ('Design REST API routing', FALSE),
+          ('Integrate Swagger documentation', FALSE)
+      `);
+    }
+  } finally {
+    client.release();
+  }
 }
 
-export default db;
+export default pool;

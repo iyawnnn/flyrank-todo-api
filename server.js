@@ -1,7 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import swaggerUi from 'swagger-ui-express';
-import db from './db.js';
+import pool, { initDb } from './db.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,46 +35,51 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
-app.get('/tasks', (req, res) => {
-  const rows = db.prepare('SELECT id, title, done FROM tasks').all();
-  res.status(200).json(rows.map(formatTask));
-});
-
-app.get('/tasks/:id', (req, res) => {
-  const taskId = parseInt(req.params.id, 10);
-  const row = db.prepare('SELECT id, title, done FROM tasks WHERE id = ?').get(taskId);
-
-  if (!row) {
-    return res.status(404).json({ error: `Task ${taskId} not found` });
+app.get('/tasks', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, title, done FROM tasks ORDER BY id ASC');
+    res.status(200).json(result.rows.map(formatTask));
+  } catch (err) {
+    res.status(500).json({ error: 'Database query failed' });
   }
-
-  res.status(200).json(formatTask(row));
 });
 
-app.post('/tasks', (req, res) => {
+app.get('/tasks/:id', async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  try {
+    const result = await pool.query('SELECT id, title, done FROM tasks WHERE id = $1', [taskId]);
+    const row = result.rows[0];
+
+    if (!row) {
+      return res.status(404).json({ error: `Task ${taskId} not found` });
+    }
+
+    res.status(200).json(formatTask(row));
+  } catch (err) {
+    res.status(500).json({ error: 'Database query failed' });
+  }
+});
+
+app.post('/tasks', async (req, res) => {
   const { title } = req.body;
 
   if (!title || typeof title !== 'string' || title.trim() === '') {
     return res.status(400).json({ error: 'Title parameter is required and cannot be empty' });
   }
 
-  const insertStmt = db.prepare('INSERT INTO tasks (title, done) VALUES (?, 0)');
-  const result = insertStmt.run(title.trim());
-
-  const newId = result.lastInsertRowid;
-  const newTask = db.prepare('SELECT id, title, done FROM tasks WHERE id = ?').get(newId);
-
-  res.status(201).json(formatTask(newTask));
+  try {
+    const result = await pool.query(
+      'INSERT INTO tasks (title, done) VALUES ($1, false) RETURNING id, title, done',
+      [title.trim()]
+    );
+    res.status(201).json(formatTask(result.rows[0]));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to insert task' });
+  }
 });
 
-app.put('/tasks/:id', (req, res) => {
+app.put('/tasks/:id', async (req, res) => {
   const taskId = parseInt(req.params.id, 10);
-  const existingTask = db.prepare('SELECT id, title, done FROM tasks WHERE id = ?').get(taskId);
-
-  if (!existingTask) {
-    return res.status(404).json({ error: `Task ${taskId} not found` });
-  }
-
   const { title, done } = req.body;
 
   if (title !== undefined && (typeof title !== 'string' || title.trim() === '')) {
@@ -85,27 +90,48 @@ app.put('/tasks/:id', (req, res) => {
     return res.status(400).json({ error: 'Done must be a boolean value' });
   }
 
-  const updatedTitle = title !== undefined ? title.trim() : existingTask.title;
-  const updatedDone = done !== undefined ? (done ? 1 : 0) : existingTask.done;
+  try {
+    const existingResult = await pool.query('SELECT id, title, done FROM tasks WHERE id = $1', [taskId]);
+    const existingTask = existingResult.rows[0];
 
-  db.prepare('UPDATE tasks SET title = ?, done = ? WHERE id = ?').run(updatedTitle, updatedDone, taskId);
+    if (!existingTask) {
+      return res.status(404).json({ error: `Task ${taskId} not found` });
+    }
 
-  const updatedRow = db.prepare('SELECT id, title, done FROM tasks WHERE id = ?').get(taskId);
-  res.status(200).json(formatTask(updatedRow));
-});
+    const updatedTitle = title !== undefined ? title.trim() : existingTask.title;
+    const updatedDone = done !== undefined ? done : existingTask.done;
 
-app.delete('/tasks/:id', (req, res) => {
-  const taskId = parseInt(req.params.id, 10);
-  const existingTask = db.prepare('SELECT id FROM tasks WHERE id = ?').get(taskId);
+    const updateResult = await pool.query(
+      'UPDATE tasks SET title = $1, done = $2 WHERE id = $3 RETURNING id, title, done',
+      [updatedTitle, updatedDone, taskId]
+    );
 
-  if (!existingTask) {
-    return res.status(404).json({ error: `Task ${taskId} not found` });
+    res.status(200).json(formatTask(updateResult.rows[0]));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update task' });
   }
-
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
-  res.status(204).send();
 });
 
-app.listen(PORT, () => {
-  console.log(`Server executing dynamically on port ${PORT}`);
+app.delete('/tasks/:id', async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+
+  try {
+    const existingResult = await pool.query('SELECT id FROM tasks WHERE id = $1', [taskId]);
+    if (existingResult.rows.length === 0) {
+      return res.status(404).json({ error: `Task ${taskId} not found` });
+    }
+
+    await pool.query('DELETE FROM tasks WHERE id = $1', [taskId]);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete task' });
+  }
+});
+
+initDb().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server executing dynamically on port ${PORT}`);
+  });
+}).catch((err) => {
+  console.error('Failed to initialize database:', err);
 });
