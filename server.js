@@ -28,13 +28,62 @@ app.get('/', (req, res) => {
   res.status(200).json({
     name: 'Task API',
     version: '1.0',
-    endpoints: ['/tasks']
+    endpoints: ['/tasks', '/auth/signup', '/auth/login']
   });
 });
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
+
+/* --- Auth Routes (Stage 1) --- */
+
+app.post('/auth/signup', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password: password.trim()
+  });
+
+  if (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
+  return res.status(201).json({
+    message: 'User registered successfully',
+    user: data.user
+  });
+});
+
+app.post('/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password: password.trim()
+  });
+
+  if (error || !data.session) {
+    return res.status(401).json({ error: 'Invalid login credentials' });
+  }
+
+  return res.status(200).json({
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+    user: data.user
+  });
+});
+
+/* --- Task Routes --- */
 
 app.get('/tasks', async (req, res) => {
   try {
