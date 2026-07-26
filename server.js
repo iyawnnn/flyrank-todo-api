@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import swaggerUi from 'swagger-ui-express';
 import pool, { initDb } from './db.js';
+import { supabase } from './supabase.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
