@@ -24,11 +24,40 @@ function formatTask(row) {
   };
 }
 
+/* --- Reusable Auth Middleware (Stage 4) --- */
+
+async function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+
+  if (error || !user) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  req.user = user;
+  req.token = token;
+  next();
+}
+
 app.get('/', (req, res) => {
   res.status(200).json({
     name: 'Task API',
     version: '1.0',
-    endpoints: ['/tasks', '/auth/signup', '/auth/login', '/public/info', '/protected/profile']
+    endpoints: [
+      '/tasks',
+      '/auth/signup',
+      '/auth/login',
+      '/auth/logout',
+      '/public/info',
+      '/protected/profile',
+      '/protected/dashboard'
+    ]
   });
 });
 
@@ -83,31 +112,34 @@ app.post('/auth/login', async (req, res) => {
   });
 });
 
-/* --- Public & Protected Routes (Stages 2 & 3) --- */
+app.post('/auth/logout', authMiddleware, async (req, res) => {
+  const { error } = await supabase.auth.signOut(req.token);
+
+  if (error) {
+    return res.status(500).json({ error: 'Failed to terminate session' });
+  }
+
+  return res.status(204).send();
+});
+
+/* --- Public & Protected Routes --- */
 
 app.get('/public/info', (req, res) => {
   res.status(200).json({ message: 'Welcome stranger! This info is public.' });
 });
 
-app.get('/protected/profile', async (req, res) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  const token = authHeader.split(' ')[1];
-
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-
-  if (error || !user) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
-
+app.get('/protected/profile', authMiddleware, (req, res) => {
   return res.status(200).json({
-    id: user.id,
-    email: user.email,
-    created_at: user.created_at
+    id: req.user.id,
+    email: req.user.email,
+    created_at: req.user.created_at
+  });
+});
+
+app.get('/protected/dashboard', authMiddleware, (req, res) => {
+  return res.status(200).json({
+    message: `Welcome to your private dashboard, ${req.user.email}!`,
+    user_id: req.user.id
   });
 });
 
