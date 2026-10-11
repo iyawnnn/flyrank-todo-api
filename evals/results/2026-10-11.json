@@ -2,9 +2,11 @@
   "date": "2026-10-11",
   "prompt_version": "triage-v1",
   "endpoint": "http://localhost:3000/triage",
+  "status": "blocked",
   "cases": 8,
   "successful_cases": 0,
   "category_accuracy": null,
+  "blocker": "Docker Desktop engine unavailable; local HTTP endpoint could not be reached. No classification cases completed.",
   "failures": [
     {
       "id": "billing-refund",

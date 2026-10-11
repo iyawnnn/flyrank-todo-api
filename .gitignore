@@ -4,3 +4,4 @@ tasks.db-wal
 node_modules
 .env
 logs/
+*.pdf

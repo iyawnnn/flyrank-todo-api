@@ -122,7 +122,7 @@ The job card and versioned prompt are in [JOB-CARD.md](./JOB-CARD.md) and `promp
 curl -s http://localhost:3000/triage -H 'Content-Type: application/json' -d '{"text":"I was charged twice for my monthly subscription."}'
 ```
 
-The API's live HTTP response is not collected because this environment has no running PostgreSQL service: the Docker engine is unavailable. The following is an actual validated provider result from the triage service's synthetic sample runner (not an HTTP endpoint response):
+The API's live HTTP response is not collected because this environment has no running PostgreSQL service: Docker Desktop processes start, but its engine service remains stopped and the CLI cannot connect to `docker_engine`. Its startup command also reports a collision while creating `%LOCALAPPDATA%\Docker\log\host`. The following is an actual validated provider result from the triage service's synthetic sample runner (not an HTTP endpoint response):
 
 ```json
 {"category":"billing","urgency":"normal","confidence":0.97,"reason":"The customer reports a duplicate subscription charge."}
@@ -132,7 +132,9 @@ On 2026-10-11, three real synthetic service calls covered typical billing, ambig
 
 Run the smoke check with `npm run smoke:provider`; it uses the configured key without printing it. Run the labelled eight-case evaluation against the running API with `npm run eval:triage`. Its dated report is saved under `evals/results/`.
 
-Eight-case live score: blocked until the Compose API and PostgreSQL services can start. The evaluation script records endpoint errors separately and reports accuracy as `null` if no cases receive a response.
+Eight-case live score: blocked; zero of eight endpoint requests succeeded, so accuracy is `null` and these are not completed classification evaluations. See `evals/results/2026-10-11.json`.
+
+Manual action required: open Docker Desktop from the Windows Start menu, approve its elevation prompt if shown, and wait for the dashboard to report that the engine is running. If startup repeats the log-path collision, resolve `%LOCALAPPDATA%\Docker\log` in Docker Desktop diagnostics, then run `docker compose up --build -d` again.
 
 For those three real synthetic service calls, the provider reported 566, 740, and 640 total tokens (1,946 total) and `$0.00` cost for each completion. These entries are in ignored `logs/triage.jsonl`. The API endpoint evaluation remains unavailable because PostgreSQL could not start. Successful triage requests store provider-reported total tokens (or `null` if unavailable) and cost when supplied.
 
