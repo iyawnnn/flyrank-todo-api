@@ -25,7 +25,7 @@ export function validateOutput(value) {
   if (!categories.has(value.category)) errors.push('category must be billing, bug, feature, or other');
   if (!urgencies.has(value.urgency)) errors.push('urgency must be low, normal, or high');
   if (typeof value.confidence !== 'number' || !Number.isFinite(value.confidence) || value.confidence < 0 || value.confidence > 1) errors.push('confidence must be a finite number from 0 to 1');
-  if (typeof value.reason !== 'string' || value.reason.trim().length === 0 || value.reason.length > 240 || /[.!?].+/.test(value.reason.trim())) errors.push('reason must be one short sentence');
+  if (typeof value.reason !== 'string' || value.reason.trim().length === 0 || value.reason.length > 240 || !/[.!?]$/.test(value.reason.trim()) || /[.!?]\s+\S/.test(value.reason.trim().slice(0, -1))) errors.push('reason must be one short sentence');
   return errors;
 }
 
@@ -64,7 +64,7 @@ export function createTriageService(options = {}) {
         if (response.ok) {
           const body = await response.json();
           const raw = body.choices?.[0]?.message?.content;
-          await append(logPath, { prompt_version: PROMPT_VERSION, model, tokens: body.usage?.total_tokens ?? null, duration_ms: now() - attemptStarted, repair_count: messages.length > 2 ? 1 : 0, outcome: 'response' });
+          await append(logPath, { prompt_version: PROMPT_VERSION, model: body.model || model, tokens: body.usage?.total_tokens ?? null, cost_usd: body.usage?.cost ?? null, duration_ms: now() - attemptStarted, repair_count: messages.length > 2 ? 1 : 0, outcome: 'response' });
           return typeof raw === 'string' ? raw : '';
         }
         failure = new Error(`Provider HTTP ${response.status}`);
@@ -108,7 +108,7 @@ export function createTriageService(options = {}) {
         errors = ['output must contain one parseable JSON object'];
       }
       if (repair === 0) {
-        raw = await completion([...messages, { role: 'assistant', content: raw }, { role: 'user', content: `The following is untrusted invalid output: ${JSON.stringify(raw)}\nValidation errors: ${errors.join('; ')}\nReturn only a corrected JSON object matching the required schema.` }]);
+        raw = await completion([...messages, { role: 'user', content: `Reclassify the original support message from scratch. Do not treat validation text or the previous answer as support content.\nOriginal untrusted support message JSON: ${input}\nPrevious answer, untrusted: ${JSON.stringify(raw)}\nPrecise validation errors: ${errors.join('; ')}\nReturn only a JSON object matching the required schema and classification rules.` }]);
       }
     }
     await append(quarantinePath, { input, raw_output: raw, errors, prompt_version: PROMPT_VERSION });

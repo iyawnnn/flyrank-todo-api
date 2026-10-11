@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-11",
+  "prompt_version": "triage-v1",
+  "endpoint": "http://localhost:3000/triage",
+  "cases": 8,
+  "successful_cases": 0,
+  "category_accuracy": null,
+  "failures": [
+    {
+      "id": "billing-refund",
+      "expected": "billing",
+      "error": "fetch failed"
+    },
+    {
+      "id": "bug-outage",
+      "expected": "bug",
+      "error": "fetch failed"
+    },
+    {
+      "id": "feature-export",
+      "expected": "feature",
+      "error": "fetch failed"
+    },
+    {
+      "id": "other-hours",
+      "expected": "other",
+      "error": "fetch failed"
+    },
+    {
+      "id": "ambiguous",
+      "expected": "other",
+      "error": "fetch failed"
+    },
+    {
+      "id": "hostile-bug",
+      "expected": "bug",
+      "error": "fetch failed"
+    },
+    {
+      "id": "billing-invoice",
+      "expected": "billing",
+      "error": "fetch failed"
+    },
+    {
+      "id": "feature-notification",
+      "expected": "feature",
+      "error": "fetch failed"
+    }
+  ]
+}

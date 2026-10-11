@@ -36,12 +36,17 @@ test('kill switch overrides stub and returns manual-review fallback', async () =
 
 test('repairs one invalid answer and returns validated JSON', async () => {
   let calls = 0;
-  const classify = createTriageService({ env: { LLM_API_KEY: 'test' }, fetchImpl: async () => {
+  let repairMessage;
+  const classify = createTriageService({ env: { LLM_API_KEY: 'test' }, fetchImpl: async (url, options) => {
     calls++;
+    if (calls === 2) repairMessage = JSON.parse(options.body).messages.at(-1).content;
     return response({ choices: [{ message: { content: calls === 1 ? '{bad' : JSON.stringify(valid) } }], usage: { total_tokens: 5 } });
   }, logPath: path.join(os.tmpdir(), `triage-${process.pid}.jsonl`) });
   assert.deepEqual(await classify('The page fails.'), valid);
   assert.equal(calls, 2);
+  assert.match(repairMessage, /Previous answer, untrusted/);
+  assert.match(repairMessage, /Precise validation errors/);
+  assert.match(repairMessage, /The page fails/);
 });
 
 test('quarantines second invalid answer and never returns provider content in the error', async () => {
