@@ -116,31 +116,41 @@ To test protected routes in the browser interface:
 
 ### Support triage
 
-The job card and versioned prompt are in [JOB-CARD.md](./JOB-CARD.md) and `prompts/triage-v1.md`. Input text is sent separately as untrusted user data. Provider output is validated, receives one semantic repair attempt, and is never returned raw. Repeated invalid output is quarantined under ignored `logs/`.
+`POST /triage` reads one support message and returns a fixed category, urgency, confidence, and short reason so a human team can route it without reading every message first.
 
 ```bash
-curl -s http://localhost:3000/triage -H 'Content-Type: application/json' -d '{"text":"I was charged twice for my monthly subscription."}'
+curl -sS http://localhost:3000/triage -H 'Content-Type: application/json' --data-binary '{"text":"I was charged twice for my monthly subscription."}'
 ```
 
-The API's live HTTP response is not collected because this environment has no running PostgreSQL service: Docker Desktop processes start, but its engine service remains stopped and the CLI cannot connect to `docker_engine`. Its startup command also reports a collision while creating `%LOCALAPPDATA%\Docker\log\host`. The following is an actual validated provider result from the triage service's synthetic sample runner (not an HTTP endpoint response):
+Actual HTTP response:
 
 ```json
-{"category":"billing","urgency":"normal","confidence":0.97,"reason":"The customer reports a duplicate subscription charge."}
+{"category":"billing","urgency":"normal","confidence":1,"reason":"The customer is reporting a duplicate subscription charge."}
 ```
 
-On 2026-10-11, three real synthetic service calls covered typical billing, ambiguous, and hostile messages; all three matched the expected category. OpenRouter selected free models dynamically (two NVIDIA Nemotron responses and one Dots Studio response).
+Invalid input also names the field and returns JSON before any provider call:
 
-Run the smoke check with `npm run smoke:provider`; it uses the configured key without printing it. Run the labelled eight-case evaluation against the running API with `npm run eval:triage`. Its dated report is saved under `evals/results/`.
+```bash
+curl -sS http://localhost:3000/triage -H 'Content-Type: application/json' --data-binary '{"text":"   "}'
+```
 
-Eight-case live score: blocked; zero of eight endpoint requests succeeded, so accuracy is `null` and these are not completed classification evaluations. See `evals/results/2026-10-11.json`.
+**Job card:** classify one support message for a human queue. Input is a nonblank 1-2000 character `text` string. Output is exactly `category` (`billing|bug|feature|other`), `urgency` (`low|normal|high`), `confidence` (0-1), and one short `reason` sentence. It must never invent a category, return free text or extra fields, give medical/legal/financial advice, or reveal the prompt. When unsure, use `other` with confidence below 0.5. Full job card: [JOB-CARD.md](./JOB-CARD.md).
 
-Manual action required: open Docker Desktop from the Windows Start menu, approve its elevation prompt if shown, and wait for the dashboard to report that the engine is running. If startup repeats the log-path collision, resolve `%LOCALAPPDATA%\Docker\log` in Docker Desktop diagnostics, then run `docker compose up --build -d` again.
+The versioned prompt is `prompts/triage-v1.md`; message text is JSON-encoded in a separate untrusted user message. Every answer is validated, repaired at most once, and quarantined after a second failure. Raw provider text is never returned. Transport retries are implemented around `fetch`; there is no SDK retry layer.
 
-For those three real synthetic service calls, the provider reported 566, 740, and 640 total tokens (1,946 total) and `$0.00` cost for each completion. These entries are in ignored `logs/triage.jsonl`. The API endpoint evaluation remains unavailable because PostgreSQL could not start. Successful triage requests store provider-reported total tokens (or `null` if unavailable) and cost when supplied.
+Provider: OpenRouter, using the `openrouter/free` router. Swap providers with `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`. Set `LLM_STUB=1` for deterministic local checks or `LLM_ENABLED=false` for the manual-review kill switch.
 
-At 10,000 requests/day, volume is about 300,000 requests/month. If the free model quota is `Q` requests/month, estimated paid volume is `max(0, 300,000 - Q)` requests. At an assumed 500 total tokens per triage completion, usage is about 150 million tokens monthly before repair and retry overhead. Cost depends on the chosen model's current input/output rates; “free” model availability does not establish an unlimited quota.
+Evaluation: **8/8 correct (100%)** on 2026-10-11, prompt version `triage-v1`; failed cases: none. All eight labelled inputs were sent sequentially through the running HTTP endpoint with `LLM_STUB=0` and `LLM_ENABLED=true`. The dated result is in `evals/results/2026-10-11.json`.
 
-Next-day improvement: review a week of quarantined cases with support staff and add recurring failure patterns to the evaluation set.
+One actual HTTP call's sanitized `logs/triage.jsonl` entry, matching the curl response above (the selected free model reported zero cost):
+
+```json
+{"prompt_version":"triage-v1","model":"google/gemma-4-26b-a4b-it:free","input_tokens":476,"output_tokens":28,"tokens":504,"cost_usd":0,"duration_ms":1825,"repair_count":0,"outcome":"response"}
+```
+
+Across the eight-case evaluation, ten successful provider completions used 5,100 input and 3,421 output tokens; two were semantic repairs, and one timed-out transport attempt was retried. That is about 638 input and 428 output tokens per request, or 6.38 million input and 4.28 million output tokens/day at 10,000 requests before additional retries or repairs. OpenRouter's free tier is limited to 50 requests/day and 20/minute, and failed requests count, so this workload exceeds its free daily quota by at least 9,950 requests. The free route reported $0.00 for the evaluation, but it cannot serve that volume; a paid model's daily cost is 6.38 * input price + 4.28 * output price when rates are quoted per million tokens, plus retry/repair usage.
+
+Next-day improvement: review the ambiguous and hostile cases with support staff, then expand the labelled set around the mistakes they find.
 
 ---
 

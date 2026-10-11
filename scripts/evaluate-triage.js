@@ -28,6 +28,7 @@ const report = {
   date: new Date().toISOString().slice(0, 10),
   prompt_version: PROMPT_VERSION,
   endpoint,
+  status: successful === cases.length ? 'completed' : successful ? 'partial' : 'blocked',
   cases: cases.length,
   successful_cases: successful,
   category_accuracy: successful ? correct / cases.length : null,

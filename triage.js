@@ -12,9 +12,33 @@ export function validateInput(text) {
 }
 
 export function extractJson(raw) {
-  const trimmed = raw.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return JSON.parse(fenced ? fenced[1] : trimmed);
+  const openings = [];
+  const candidates = [];
+  let quoted = false;
+  let escaped = false;
+  for (let index = 0; index < raw.length; index++) {
+    const character = raw[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') quoted = false;
+    } else if (character === '"') quoted = true;
+    else if (character === '{') openings.push(index);
+    else if (character === '}' && openings.length) {
+      const start = openings.pop();
+      try {
+        const value = JSON.parse(raw.slice(start, index + 1));
+        if (value && typeof value === 'object' && !Array.isArray(value)) candidates.push({ start, end: index, value });
+      } catch {
+        // Unbalanced prose or another invalid brace group is not model JSON.
+      }
+    }
+  }
+  const objects = candidates.filter(candidate => !candidates.some(other =>
+    other.start < candidate.start && other.end > candidate.end
+  ));
+  if (objects.length !== 1) throw new SyntaxError('Expected exactly one JSON object');
+  return objects[0].value;
 }
 
 export function validateOutput(value) {
@@ -64,7 +88,7 @@ export function createTriageService(options = {}) {
         if (response.ok) {
           const body = await response.json();
           const raw = body.choices?.[0]?.message?.content;
-          await append(logPath, { prompt_version: PROMPT_VERSION, model: body.model || model, tokens: body.usage?.total_tokens ?? null, cost_usd: body.usage?.cost ?? null, duration_ms: now() - attemptStarted, repair_count: messages.length > 2 ? 1 : 0, outcome: 'response' });
+          await append(logPath, { prompt_version: PROMPT_VERSION, model: body.model || model, input_tokens: body.usage?.prompt_tokens ?? null, output_tokens: body.usage?.completion_tokens ?? null, tokens: body.usage?.total_tokens ?? null, cost_usd: body.usage?.cost ?? null, duration_ms: now() - attemptStarted, repair_count: messages.length > 2 ? 1 : 0, outcome: 'response' });
           return typeof raw === 'string' ? raw : '';
         }
         failure = new Error(`Provider HTTP ${response.status}`);
@@ -78,12 +102,12 @@ export function createTriageService(options = {}) {
         const retrySeconds = Number(retryHeader);
         const retryDate = Date.parse(retryHeader);
         const retryAfter = Number.isFinite(retrySeconds) && retrySeconds > 0 ? retrySeconds * 1000 : Number.isFinite(retryDate) ? Math.max(0, retryDate - now()) : 0;
-        const backoff = retryAfter || 250 * (2 ** attempt) + Math.random() * 150;
-        await append(logPath, { prompt_version: PROMPT_VERSION, model, tokens: null, duration_ms: now() - attemptStarted, repair_count: messages.length > 2 ? 1 : 0, outcome: `retry_${attempt + 1}` });
+        const backoff = retryAfter || 1000 * (2 ** attempt) + Math.random() * 250;
+        await append(logPath, { prompt_version: PROMPT_VERSION, model, input_tokens: null, output_tokens: null, tokens: null, cost_usd: null, duration_ms: now() - attemptStarted, repair_count: messages.length > 2 ? 1 : 0, outcome: `retry_${attempt + 1}` });
         await delay(backoff);
         continue;
       }
-      await append(logPath, { prompt_version: PROMPT_VERSION, model, tokens: null, duration_ms: now() - attemptStarted, repair_count: messages.length > 2 ? 1 : 0, outcome: failure.name === 'TimeoutError' || failure.name === 'AbortError' ? 'timeout' : `error_${failure.status || 'transport'}` });
+      await append(logPath, { prompt_version: PROMPT_VERSION, model, input_tokens: null, output_tokens: null, tokens: null, cost_usd: null, duration_ms: now() - attemptStarted, repair_count: messages.length > 2 ? 1 : 0, outcome: failure.name === 'TimeoutError' || failure.name === 'AbortError' ? 'timeout' : `error_${failure.status || 'transport'}` });
       if (failure.name === 'TimeoutError' || failure.name === 'AbortError') failure.status = 504;
       throw failure;
     }
