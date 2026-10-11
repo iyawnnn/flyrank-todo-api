@@ -3,3 +3,4 @@ tasks.db-journal
 tasks.db-wal
 node_modules
 .env
+logs/

@@ -6,8 +6,16 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:dev@db:5432/tasks
       PORT: 3000
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_KEY: ${SUPABASE_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://openrouter.ai/api/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-openrouter/free}
+      LLM_STUB: ${LLM_STUB:-0}
+      LLM_ENABLED: ${LLM_ENABLED:-true}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:16
@@ -18,6 +26,11 @@ services:
       - "5432:5432"
     volumes:
       - taskdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tasks"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
 
 volumes:
   taskdata:
