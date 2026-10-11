@@ -3,9 +3,11 @@ import fs from 'fs';
 import swaggerUi from 'swagger-ui-express';
 import pool, { initDb } from './db.js';
 import { supabase } from './supabase.js';
+import { createTriageService, validateInput } from './triage.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const classify = createTriageService();
 
 app.use(express.json());
 
@@ -27,6 +29,7 @@ function formatTask(row) {
 /* --- Reusable Auth Middleware (Stage 4) --- */
 
 async function authMiddleware(req, res, next) {
+  if (!supabase) return res.status(503).json({ error: 'Authentication is unavailable: Supabase is not configured' });
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -55,6 +58,7 @@ app.get('/', (req, res) => {
       '/auth/login',
       '/auth/logout',
       '/public/info',
+      '/triage',
       '/protected/profile',
       '/protected/dashboard'
     ]
@@ -65,9 +69,20 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+app.post('/triage', async (req, res) => {
+  const text = req.body?.text;
+  if (!validateInput(text)) return res.status(400).json({ error: 'text must be a nonblank string of 1 to 2000 characters' });
+  try {
+    res.status(200).json(await classify(text));
+  } catch (error) {
+    res.status(error.status || 502).json({ error: error.status === 422 ? error.message : error.status === 504 ? 'Triage provider timed out; please retry later.' : 'Triage provider is unavailable.' });
+  }
+});
+
 /* --- Auth Routes --- */
 
 app.post('/auth/signup', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Authentication is unavailable: Supabase is not configured' });
   const { email, password } = req.body;
 
   if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
@@ -90,6 +105,7 @@ app.post('/auth/signup', async (req, res) => {
 });
 
 app.post('/auth/login', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Authentication is unavailable: Supabase is not configured' });
   const { email, password } = req.body;
 
   if (!email || !password) {
